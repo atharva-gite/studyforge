@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     secret_key: str = "dev-only-change-me-before-any-shared-deployment"
     storage_root: str = str(API_ROOT / "storage")
     max_upload_bytes: int = 25 * 1024 * 1024
-    cookie_name: str = "folio_session"
+    cookie_name: str = "studyforge_session"
     cookie_secure: bool = False
     session_days: int = 7
 

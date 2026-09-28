@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.routers import auth, courses, documents
 
-log = logging.getLogger("folio.request")
+log = logging.getLogger("studyforge.request")
 
 
 @asynccontextmanager
@@ -20,9 +20,9 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="Folio API",
+    title="StudyForge API",
     version="0.1.0",
-    summary="Course-aware study system",
+    summary="Course corpus for grounded retrieval",
     description=(
         "PostgreSQL is the source of truth for application state. "
         "Object storage holds uploaded files. This phase covers accounts, "

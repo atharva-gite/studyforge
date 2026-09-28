@@ -3,7 +3,7 @@ from pathlib import Path
 
 from app.config import get_settings
 
-log = logging.getLogger("folio.storage")
+log = logging.getLogger("studyforge.storage")
 
 
 class LocalObjectStorage:

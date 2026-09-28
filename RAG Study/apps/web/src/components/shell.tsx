@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { Wordmark } from "@/components/wordmark";
 import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
 
@@ -44,30 +45,41 @@ export function Shell({ children }: { children: React.ReactNode }) {
     router.replace("/login");
   }
 
-  if (state === "loading" || (!bare && state !== "ready")) {
-    return (
-      <div className="mx-auto max-w-5xl px-6 py-10 text-muted">Loading…</div>
-    );
+  if (bare) {
+    if (state === "loading" || state === "ready") {
+      return <div className="px-6 py-10 font-mono text-xs uppercase tracking-[0.16em] text-slag">Loading…</div>;
+    }
+    return <>{children}</>;
   }
 
+  if (state !== "ready" || !user) {
+    return <div className="px-6 py-10 font-mono text-xs uppercase tracking-[0.16em] text-slag">Loading…</div>;
+  }
+
+  const coursesActive = pathname.startsWith("/courses");
+
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-line">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
-          <Link href={user ? "/courses" : "/"} className="font-serif text-2xl tracking-tight">
-            Folio
-          </Link>
-          {user ? (
-            <div className="flex items-center gap-4 text-sm">
-              <span className="hidden text-muted sm:inline">{user.email}</span>
-              <button type="button" onClick={logout} className="text-ink underline-offset-4 hover:underline">
-                Log out
-              </button>
-            </div>
-          ) : null}
+    <div className="min-h-screen lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
+      <aside className="flex items-center justify-between gap-4 border-b border-line px-4 py-3 lg:flex-col lg:items-stretch lg:justify-between lg:border-r lg:border-b-0 lg:px-5 lg:py-6">
+        <div className="flex items-center gap-5 lg:block">
+          <Wordmark href="/courses" />
+          <nav className="lg:mt-8">
+            <Link
+              href="/courses"
+              className={`font-mono text-[11px] uppercase tracking-[0.16em] ${coursesActive ? "text-ember" : "text-slag hover:text-bone"}`}
+            >
+              Courses
+            </Link>
+          </nav>
         </div>
-      </header>
-      {children}
+        <div className="min-w-0 text-right lg:text-left">
+          <p className="truncate font-mono text-[11px] text-slag">{user.email}</p>
+          <button type="button" onClick={logout} className="mt-1 text-sm text-bone underline-offset-4 hover:underline">
+            Log out
+          </button>
+        </div>
+      </aside>
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }

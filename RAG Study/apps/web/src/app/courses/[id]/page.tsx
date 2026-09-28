@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
+import { StageTracker } from "@/components/stage-tracker";
+import { alertClass, buttonClass, fieldClass, labelClass } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import {
   DOCUMENT_TYPES,
@@ -14,11 +16,15 @@ import {
   type DocumentRecord,
 } from "@/lib/types";
 
-function statusClass(status: string): string {
-  if (status === "READY") return "bg-pine-soft text-pine";
-  if (status === "FAILED") return "bg-clay-soft text-clay";
-  if (status === "UPLOADED") return "bg-gold-soft text-gold";
-  return "bg-sand text-ink";
+const IN_FLIGHT = new Set(["PROCESSING", "EXTRACTING", "CHUNKING", "EMBEDDING", "INDEXING"]);
+
+function tally(documents: DocumentRecord[]) {
+  return {
+    uploaded: documents.filter((document) => document.status === "UPLOADED").length,
+    inflight: documents.filter((document) => IN_FLIGHT.has(document.status)).length,
+    ready: documents.filter((document) => document.status === "READY").length,
+    failed: documents.filter((document) => document.status === "FAILED").length,
+  };
 }
 
 export default function CoursePage() {
@@ -27,6 +33,7 @@ export default function CoursePage() {
   const courseId = params.id;
   const [course, setCourse] = useState<Course | null>(null);
   const [documents, setDocuments] = useState<DocumentRecord[] | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [title, setTitle] = useState("");
@@ -35,13 +42,22 @@ export default function CoursePage() {
   const [pending, setPending] = useState(false);
   const [uploadKey, setUploadKey] = useState(0);
 
-  async function load() {
+  function applyDocuments(nextDocuments: DocumentRecord[], preferredId?: string) {
+    setDocuments(nextDocuments);
+    setSelectedId((current) => {
+      if (preferredId && nextDocuments.some((document) => document.id === preferredId)) return preferredId;
+      if (current && nextDocuments.some((document) => document.id === current)) return current;
+      return nextDocuments[0]?.id ?? null;
+    });
+  }
+
+  async function load(preferredId?: string) {
     const [nextCourse, nextDocuments] = await Promise.all([
       api<Course>(`/courses/${courseId}`),
       api<DocumentRecord[]>(`/courses/${courseId}/documents`),
     ]);
     setCourse(nextCourse);
-    setDocuments(nextDocuments);
+    applyDocuments(nextDocuments, preferredId);
   }
 
   useEffect(() => {
@@ -53,7 +69,7 @@ export default function CoursePage() {
       .then(([nextCourse, nextDocuments]) => {
         if (cancelled) return;
         setCourse(nextCourse);
-        setDocuments(nextDocuments);
+        applyDocuments(nextDocuments);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -90,8 +106,12 @@ export default function CoursePage() {
       setTitle("");
       setFile(null);
       setUploadKey((value) => value + 1);
-      setNote(uploaded.duplicate ? "This exact file is already in the course." : "Stored. Text extraction has not started yet.");
-      await load();
+      setNote(
+        uploaded.duplicate
+          ? "This exact file is already in the corpus."
+          : "Stored. Text extraction has not started.",
+      );
+      await load(uploaded.id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Your existing course data is safe. Try again.");
     } finally {
@@ -100,7 +120,7 @@ export default function CoursePage() {
   }
 
   async function removeDocument(documentId: string) {
-    if (!window.confirm("Remove this document from the course?")) return;
+    if (!window.confirm("Remove this file from the corpus?")) return;
     setError(null);
     try {
       await api(`/documents/${documentId}`, { method: "DELETE" });
@@ -111,7 +131,7 @@ export default function CoursePage() {
   }
 
   async function removeCourse() {
-    if (!course || !window.confirm(`Delete ${course.name}? Uploaded files for this course will be removed.`)) return;
+    if (!course || !window.confirm(`Delete ${course.name}? Uploaded files for this corpus will be removed.`)) return;
     try {
       await api(`/courses/${courseId}`, { method: "DELETE" });
       router.replace("/courses");
@@ -120,114 +140,203 @@ export default function CoursePage() {
     }
   }
 
+  const counts = documents ? tally(documents) : null;
+  const selected = documents?.find((document) => document.id === selectedId) ?? null;
+
   return (
-    <main className="mx-auto max-w-5xl px-6 py-12">
-      <Link href="/courses" className="text-sm text-muted underline-offset-4 hover:underline">
+    <main className="px-5 py-8 sm:px-8 lg:py-10">
+      <Link href="/courses" className="font-mono text-[11px] uppercase tracking-[0.16em] text-slag hover:text-bone">
         All courses
       </Link>
 
       {course ? (
         <header className="mt-4">
-          {course.code ? <p className="text-xs tracking-[0.18em] text-pine uppercase">{course.code}</p> : null}
-          <h1 className="font-serif text-4xl">{course.name}</h1>
-          {course.description ? <p className="mt-3 max-w-2xl text-muted">{course.description}</p> : null}
+          {course.code ? <p className="font-mono text-[11px] tracking-[0.18em] text-ember uppercase">{course.code}</p> : null}
+          <h1 className="mt-1 font-display text-4xl">{course.name}</h1>
+          {course.description ? <p className="mt-3 max-w-2xl text-slag">{course.description}</p> : null}
         </header>
       ) : (
-        <h1 className="mt-4 font-serif text-4xl">Course</h1>
+        <h1 className="mt-4 font-display text-4xl">Course</h1>
       )}
 
       {error ? (
-        <p role="alert" className="mt-6 rounded-md bg-clay-soft px-3 py-2 text-sm text-clay">
+        <p role="alert" className={`mt-6 ${alertClass}`}>
           {error}
         </p>
       ) : null}
 
-      <form onSubmit={onUpload} className="mt-8 grid gap-3 rounded-lg border border-line bg-sand p-4 sm:grid-cols-[1fr_10rem_auto]">
-        <label className="text-sm sm:col-span-1">
-          Title
-          <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="Optional, otherwise taken from the filename"
-            className="mt-1 w-full rounded-md border border-line bg-paper px-3 py-2 outline-none focus:border-pine"
-          />
-        </label>
-        <label className="text-sm">
-          Type
-          <select
-            value={documentType}
-            onChange={(event) => setDocumentType(event.target.value)}
-            className="mt-1 w-full rounded-md border border-line bg-paper px-3 py-2 outline-none focus:border-pine"
-          >
-            {DOCUMENT_TYPES.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex items-end gap-3 sm:col-span-3">
-          <label className="text-sm">
-            PDF
-            <input
-              type="file"
-              accept="application/pdf,.pdf"
-              required
-              key={uploadKey}
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              className="mt-1 block text-sm"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={pending || !file}
-            className="rounded-full bg-pine px-5 py-2.5 text-sm text-sand hover:bg-pine-deep disabled:opacity-60"
-          >
-            {pending ? "Uploading…" : "Upload"}
-          </button>
-        </div>
-      </form>
-      {note ? <p className="mt-3 text-sm text-muted">{note}</p> : null}
+      <div className="mt-8 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <section>
+          {counts ? (
+            <dl className="grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-4">
+              {(
+                [
+                  ["Uploaded", counts.uploaded],
+                  ["In flight", counts.inflight],
+                  ["Ready", counts.ready],
+                  ["Failed", counts.failed],
+                ] as const
+              ).map(([label, value]) => (
+                <div key={label} className="bg-panel px-3 py-3">
+                  <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-slag">{label}</dt>
+                  <dd className="mt-2 font-mono text-xl leading-none">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
 
-      {documents && documents.length === 0 ? (
-        <p className="mt-10 text-muted">Upload your syllabus or lecture notes to start asking course questions.</p>
-      ) : null}
+          <form onSubmit={onUpload} className="mt-4 border border-line bg-panel p-4">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-ember">Add to corpus</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_11rem]">
+              <label className={labelClass}>
+                Title
+                <input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="Optional, otherwise taken from the filename"
+                  className={fieldClass}
+                />
+              </label>
+              <label className={labelClass}>
+                Type
+                <select
+                  value={documentType}
+                  onChange={(event) => setDocumentType(event.target.value)}
+                  className={fieldClass}
+                >
+                  {DOCUMENT_TYPES.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <label className={labelClass}>
+                PDF
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  required
+                  key={uploadKey}
+                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  className="mt-1.5 block text-sm text-slag file:mr-3 file:border-0 file:bg-ember file:px-3 file:py-2 file:text-sm file:font-medium file:text-forge"
+                />
+              </label>
+              <button type="submit" disabled={pending || !file} className={buttonClass}>
+                {pending ? "Uploading…" : "Upload"}
+              </button>
+            </div>
+          </form>
+          {note ? <p className="mt-3 text-sm text-slag">{note}</p> : null}
 
-      {documents && documents.length > 0 ? (
-        <ul className="mt-8 divide-y divide-line border-y border-line">
-          {documents.map((document) => (
-            <li key={document.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-serif text-xl">{document.title}</p>
-                <p className="mt-1 text-sm text-muted">
-                  {documentTypeLabel(document.document_type)} · {document.original_filename} · {formatBytes(document.size_bytes)} · v{document.version_number}
-                </p>
-                {document.status === "UPLOADED" ? (
-                  <p className="mt-1 text-sm text-muted">Stored. Text extraction has not started yet.</p>
+          {documents && documents.length === 0 ? (
+            <p className="mt-8 text-slag">
+              This corpus is empty. Upload a syllabus or lecture PDF. Retrieval stays locked until the files are indexed.
+            </p>
+          ) : null}
+
+          {documents && documents.length > 0 ? (
+            <ul className="mt-4 border-y border-line">
+              {documents.map((document) => {
+                const active = document.id === selectedId;
+                return (
+                  <li key={document.id} className="border-b border-line last:border-b-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(document.id)}
+                      className={`w-full px-1 py-4 text-left ${active ? "bg-panel" : "hover:bg-panel/60"}`}
+                    >
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <span className="font-display text-xl">{document.title}</span>
+                        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-slag">
+                          {statusLabel(document.status)}
+                        </span>
+                      </div>
+                      <p className="mt-1 font-mono text-[11px] text-slag">
+                        {documentTypeLabel(document.document_type)} · {formatBytes(document.size_bytes)} · v
+                        {document.version_number}
+                      </p>
+                      <div className="mt-3">
+                        <StageTracker status={document.status} />
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+
+          {course?.role === "OWNER" ? (
+            <button type="button" onClick={removeCourse} className="mt-8 text-sm text-fault underline-offset-4 hover:underline">
+              Delete course
+            </button>
+          ) : null}
+        </section>
+
+        <aside className="space-y-4">
+          <section className="border border-line bg-panel p-4">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-ember">Inspector</p>
+            {selected ? (
+              <dl className="mt-4 space-y-3 text-sm">
+                <div>
+                  <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-slag">File</dt>
+                  <dd className="mt-1 break-all">{selected.original_filename}</dd>
+                </div>
+                <div>
+                  <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-slag">SHA-256</dt>
+                  <dd className="mt-1 font-mono text-[11px] break-all text-bone">{selected.sha256}</dd>
+                </div>
+                <div>
+                  <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-slag">Active version</dt>
+                  <dd className="mt-1 font-mono text-xs">v{selected.version_number}</dd>
+                </div>
+                <p className="text-slag">Only the active version will be retrieved.</p>
+                {selected.status === "UPLOADED" ? (
+                  <p className="text-slag">Stored. Text extraction has not started.</p>
                 ) : null}
-                {document.error ? <p className="mt-1 text-sm text-clay">{document.error}</p> : null}
-              </div>
-              <div className="flex items-center gap-3">
-                <span className={`rounded-full px-3 py-1 text-xs ${statusClass(document.status)}`}>
-                  {statusLabel(document.status)}
-                </span>
-                <a href={`/api/documents/${document.id}/file`} className="text-sm underline-offset-4 hover:underline" target="_blank" rel="noreferrer">
-                  View
-                </a>
-                <button type="button" onClick={() => removeDocument(document.id)} className="text-sm text-clay underline-offset-4 hover:underline">
-                  Remove
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+                {selected.error ? <p className="text-fault">{selected.error}</p> : null}
+                <div className="flex gap-4 pt-1">
+                  <a
+                    href={`/api/documents/${selected.id}/file`}
+                    className="text-sm text-bone underline-offset-4 hover:underline"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View file
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => removeDocument(selected.id)}
+                    className="text-sm text-fault underline-offset-4 hover:underline"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </dl>
+            ) : (
+              <p className="mt-4 text-sm text-slag">Select a file to inspect its version and hash.</p>
+            )}
+          </section>
 
-      {course?.role === "OWNER" ? (
-        <button type="button" onClick={removeCourse} className="mt-12 text-sm text-clay underline-offset-4 hover:underline">
-          Delete course
-        </button>
-      ) : null}
+          <section className="border border-line bg-panel p-4">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-ember">Retrieval</p>
+            <label className={`${labelClass} mt-4`}>
+              Question
+              <textarea
+                disabled
+                rows={4}
+                placeholder="Ask this corpus"
+                className={`${fieldClass} cursor-not-allowed opacity-60`}
+              />
+            </label>
+            <p className="mt-3 text-sm text-slag">
+              This corpus has no indexed chunks yet, so StudyForge will not answer.
+            </p>
+          </section>
+        </aside>
+      </div>
     </main>
   );
 }

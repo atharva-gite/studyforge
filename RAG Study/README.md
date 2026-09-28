@@ -1,4 +1,4 @@
-# Folio
+# StudyForge
 
 Course-aware study system. PostgreSQL holds application state, object storage holds uploaded files, and the API is the only place that will orchestrate retrieval and planning.
 

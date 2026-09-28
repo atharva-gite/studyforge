@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import { alertClass, buttonClass, fieldClass, labelClass } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import type { Course } from "@/lib/types";
 
@@ -36,50 +37,47 @@ export default function NewCoursePage() {
   }
 
   return (
-    <main className="mx-auto max-w-xl px-6 py-12">
-      <Link href="/courses" className="text-sm text-muted underline-offset-4 hover:underline">
-        Back to courses
+    <main className="px-5 py-8 sm:px-8 lg:py-10">
+      <Link href="/courses" className="font-mono text-[11px] uppercase tracking-[0.16em] text-slag hover:text-bone">
+        All courses
       </Link>
-      <h1 className="mt-4 font-serif text-4xl">New course</h1>
-      <form onSubmit={onSubmit} className="mt-8 space-y-4">
-        <label className="block text-sm">
+      <h1 className="mt-4 font-display text-4xl">New course</h1>
+      <p className="mt-2 max-w-lg text-slag">A course is a corpus. Its files stay separate from every other course.</p>
+      <form onSubmit={onSubmit} className="mt-8 max-w-xl space-y-4 border border-line bg-panel p-5">
+        <label className={labelClass}>
           Name
           <input
             required
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Operating Systems"
-            className="mt-1 w-full rounded-md border border-line bg-sand px-3 py-2 outline-none focus:border-pine"
+            className={fieldClass}
           />
         </label>
-        <label className="block text-sm">
+        <label className={labelClass}>
           Code
           <input
             value={code}
             onChange={(event) => setCode(event.target.value)}
             placeholder="CS301"
-            className="mt-1 w-full rounded-md border border-line bg-sand px-3 py-2 outline-none focus:border-pine"
+            className={fieldClass}
           />
         </label>
-        <label className="block text-sm">
+        <label className={labelClass}>
           Description
           <textarea
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             rows={4}
-            className="mt-1 w-full rounded-md border border-line bg-sand px-3 py-2 outline-none focus:border-pine"
+            className={fieldClass}
           />
         </label>
         {error ? (
-          <p role="alert" className="rounded-md bg-clay-soft px-3 py-2 text-sm text-clay">
+          <p role="alert" className={alertClass}>
             {error}
           </p>
         ) : null}
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-full bg-pine px-5 py-2.5 text-sm text-sand hover:bg-pine-deep disabled:opacity-60"
-        >
+        <button type="submit" disabled={pending} className={buttonClass}>
           {pending ? "Creating…" : "Create course"}
         </button>
       </form>

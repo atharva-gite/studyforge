@@ -2,25 +2,27 @@
 
 @theme inline {
   --font-sans: var(--font-source), "Source Sans 3", sans-serif;
-  --font-serif: var(--font-fraunces), "Iowan Old Style", Palatino, serif;
-  --color-paper: #f4efe6;
-  --color-ink: #1c1915;
-  --color-muted: #655e54;
-  --color-line: #e3dacb;
-  --color-sand: #fffdf8;
-  --color-pine: #1f4a3a;
-  --color-pine-deep: #143328;
-  --color-clay: #8d3b2e;
-  --color-gold: #8a5a12;
-  --color-gold-soft: #f8efd8;
-  --color-pine-soft: #e5efe9;
-  --color-clay-soft: #f8e8e4;
+  --font-display: var(--font-syne), Syne, sans-serif;
+  --font-mono: var(--font-plex), "IBM Plex Mono", ui-monospace, monospace;
+  --color-forge: #0e0d0b;
+  --color-panel: #1a1814;
+  --color-line: #2e2a24;
+  --color-bone: #f3efe6;
+  --color-slag: #8a8478;
+  --color-ember: #ff5c1c;
+  --color-ember-deep: #c73d0a;
+  --color-ember-soft: #3a2418;
+  --color-signal: #7dcea0;
+  --color-signal-soft: #1a2e26;
+  --color-fault: #ff6b6b;
+  --color-fault-soft: #3a2220;
 }
 
 body {
-  background: var(--color-paper);
-  color: var(--color-ink);
+  background: var(--color-forge);
+  color: var(--color-bone);
   font-family: var(--font-sans);
+  color-scheme: dark;
 }
 
 input,
@@ -31,5 +33,6 @@ button {
 }
 
 ::selection {
-  background: #d7e4dc;
+  background: #ff5c1c;
+  color: #0e0d0b;
 }
