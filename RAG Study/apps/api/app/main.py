@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import auth, courses, documents
+from app.routers import auth, courses, documents, questions, study
 
 log = logging.getLogger("studyforge.request")
 
@@ -25,8 +25,8 @@ app = FastAPI(
     summary="Course corpus for grounded retrieval",
     description=(
         "PostgreSQL is the source of truth for application state. "
-        "Object storage holds uploaded files. This phase covers accounts, "
-        "courses, and document metadata. Retrieval and planning come later."
+        "Object storage holds uploaded files. The worker indexes them, and "
+        "questions, flashcards, and quizzes stay tied to retrieved chunks."
     ),
     lifespan=lifespan,
 )
@@ -66,3 +66,5 @@ def health() -> dict[str, str]:
 app.include_router(auth.router)
 app.include_router(courses.router)
 app.include_router(documents.router)
+app.include_router(questions.router)
+app.include_router(study.router)

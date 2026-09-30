@@ -54,6 +54,17 @@ def setup_db():
 
 
 @pytest.fixture(autouse=True)
+def language_model():
+    from app.services.language import set_language_model
+    from tests.fakes import FakeLanguageModel
+
+    model = FakeLanguageModel()
+    set_language_model(model)
+    yield model
+    set_language_model(None)
+
+
+@pytest.fixture(autouse=True)
 def clean_tables(setup_db):
     get_settings.cache_clear()
     session = session_factory()()

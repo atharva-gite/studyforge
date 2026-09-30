@@ -15,6 +15,95 @@ export type Course = {
   updated_at: string;
 };
 
+export type Citation = {
+  chunk_id: string;
+  document_id: string;
+  document_title: string;
+  page_start: number | null;
+  page_end: number | null;
+  section: string | null;
+};
+
+export type QuestionResult = {
+  status: "answered" | "insufficient_evidence";
+  answer: string | null;
+  citations: Citation[];
+};
+
+export type StudyCard = {
+  id: string;
+  position: number;
+  front: string;
+  back: string;
+  latest_rating: "AGAIN" | "KNOWN" | null;
+  chunk_id: string | null;
+  document_id: string | null;
+  document_title: string | null;
+  page_start: number | null;
+};
+
+export type Deck = {
+  id: string;
+  title: string;
+  next_card_id: string | null;
+  cards: StudyCard[];
+};
+
+export type DeckResult = {
+  status: "created" | "insufficient_evidence";
+  deck: Deck | null;
+};
+
+export type QuizQuestion = {
+  id: string;
+  position: number;
+  prompt: string;
+  options: string[];
+};
+
+export type Quiz = {
+  id: string;
+  title: string;
+  questions: QuizQuestion[];
+};
+
+export type QuizResult = {
+  status: "created" | "insufficient_evidence";
+  quiz: Quiz | null;
+};
+
+export type AttemptResult = {
+  question_id: string;
+  prompt: string;
+  selected_option_index: number | null;
+  correct_option_index: number;
+  correct: boolean;
+  explanation: string | null;
+  citation: Citation | null;
+};
+
+export type Attempt = {
+  score: number;
+  results: AttemptResult[];
+};
+
+export type StudySessionItem = {
+  id: string;
+  scheduled_on: string;
+  duration_minutes: number;
+  activity: string;
+  focus: string | null;
+  status: string;
+};
+
+export type StudyPlan = {
+  id: string;
+  exam_title: string;
+  exam_date: string;
+  hours_per_day: number;
+  sessions: StudySessionItem[];
+};
+
 export type DocumentRecord = {
   id: string;
   course_id: string;

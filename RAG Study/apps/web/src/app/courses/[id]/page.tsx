@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
 import { StageTracker } from "@/components/stage-tracker";
+import { StudyPanel } from "@/components/study-panel";
 import { alertClass, buttonClass, fieldClass, labelClass } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import {
@@ -14,6 +15,7 @@ import {
   statusLabel,
   type Course,
   type DocumentRecord,
+  type QuestionResult,
 } from "@/lib/types";
 
 const IN_FLIGHT = new Set(["PROCESSING", "EXTRACTING", "CHUNKING", "EMBEDDING", "INDEXING"]);
@@ -41,6 +43,9 @@ export default function CoursePage() {
   const [file, setFile] = useState<File | null>(null);
   const [pending, setPending] = useState(false);
   const [uploadKey, setUploadKey] = useState(0);
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState<QuestionResult | null>(null);
 
   function applyDocuments(nextDocuments: DocumentRecord[], preferredId?: string) {
     setDocuments(nextDocuments);
@@ -88,6 +93,16 @@ export default function CoursePage() {
     };
   }, [courseId]);
 
+  useEffect(() => {
+    if (!documents?.some((document) => document.status !== "READY" && document.status !== "FAILED")) return;
+    const timer = window.setInterval(() => {
+      api<DocumentRecord[]>(`/courses/${courseId}/documents`)
+        .then((nextDocuments) => applyDocuments(nextDocuments))
+        .catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [courseId, documents]);
+
   async function onUpload(event: FormEvent) {
     event.preventDefault();
     if (!file) return;
@@ -109,7 +124,7 @@ export default function CoursePage() {
       setNote(
         uploaded.duplicate
           ? "This exact file is already in the corpus."
-          : "Stored. Text extraction has not started.",
+          : "Stored. The worker will extract and index it.",
       );
       await load(uploaded.id);
     } catch (err) {
@@ -214,10 +229,10 @@ export default function CoursePage() {
             </div>
             <div className="mt-4 flex flex-wrap items-end gap-3">
               <label className={labelClass}>
-                PDF
+                File
                 <input
                   type="file"
-                  accept="application/pdf,.pdf"
+                  accept=".pdf,.txt,.md,.csv,.xlsx,.docx,.pptx,.png,.jpg,.jpeg,.webp"
                   required
                   key={uploadKey}
                   onChange={(event) => setFile(event.target.files?.[0] ?? null)}
@@ -233,7 +248,7 @@ export default function CoursePage() {
 
           {documents && documents.length === 0 ? (
             <p className="mt-8 text-slag">
-              This corpus is empty. Upload a syllabus or lecture PDF. Retrieval stays locked until the files are indexed.
+              This corpus is empty. Upload notes, slides, a spreadsheet, or a photo. Retrieval stays locked until the files are indexed.
             </p>
           ) : null}
 
@@ -294,7 +309,7 @@ export default function CoursePage() {
                 </div>
                 <p className="text-slag">Only the active version will be retrieved.</p>
                 {selected.status === "UPLOADED" ? (
-                  <p className="text-slag">Stored. Text extraction has not started.</p>
+                  <p className="text-slag">Waiting for the worker to extract and index this file.</p>
                 ) : null}
                 {selected.error ? <p className="text-fault">{selected.error}</p> : null}
                 <div className="flex gap-4 pt-1">
@@ -322,21 +337,90 @@ export default function CoursePage() {
 
           <section className="border border-line bg-panel p-4">
             <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-ember">Retrieval</p>
-            <label className={`${labelClass} mt-4`}>
-              Question
-              <textarea
-                disabled
-                rows={4}
-                placeholder="Ask this corpus"
-                className={`${fieldClass} cursor-not-allowed opacity-60`}
-              />
-            </label>
-            <p className="mt-3 text-sm text-slag">
-              This corpus has no indexed chunks yet, so StudyForge will not answer.
-            </p>
+            {counts && counts.ready > 0 ? (
+              <form
+                className="mt-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!question.trim()) return;
+                  setAsking(true);
+                  setError(null);
+                  setAnswer(null);
+                  api<QuestionResult>(`/courses/${courseId}/questions`, {
+                    method: "POST",
+                    body: JSON.stringify({ question: question.trim() }),
+                  })
+                    .then((result) => setAnswer(result))
+                    .catch((err: unknown) => {
+                      setError(
+                        err instanceof ApiError
+                          ? err.message
+                          : "Something went wrong. Your existing course data is safe. Try again.",
+                      );
+                    })
+                    .finally(() => setAsking(false));
+                }}
+              >
+                <label className={labelClass}>
+                  Question
+                  <textarea
+                    rows={4}
+                    value={question}
+                    onChange={(event) => setQuestion(event.target.value)}
+                    placeholder="Ask this corpus"
+                    className={fieldClass}
+                  />
+                </label>
+                <button type="submit" className={`${buttonClass} mt-3`} disabled={asking || !question.trim()}>
+                  {asking ? "Searching the corpus…" : "Ask"}
+                </button>
+                {answer?.status === "answered" && answer.answer ? (
+                  <div className="mt-4 border-t border-line pt-4">
+                    <p className="text-sm text-bone">{answer.answer}</p>
+                    <ul className="mt-3 space-y-2">
+                      {answer.citations.map((citation) => (
+                        <li key={citation.chunk_id}>
+                          <a
+                            href={`/api/documents/${citation.document_id}/file#page=${citation.page_start ?? 1}`}
+                            className="text-sm text-bone underline-offset-4 hover:underline"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {citation.document_title}
+                            {citation.page_start ? `, p. ${citation.page_start}` : ""}
+                            {citation.section ? ` · ${citation.section}` : ""}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {answer?.status === "insufficient_evidence" ? (
+                  <p className="mt-4 text-sm text-slag">
+                    Insufficient evidence. This corpus does not contain an answer to that question.
+                  </p>
+                ) : null}
+              </form>
+            ) : (
+              <>
+                <label className={`${labelClass} mt-4`}>
+                  Question
+                  <textarea
+                    disabled
+                    rows={4}
+                    placeholder="Ask this corpus"
+                    className={`${fieldClass} cursor-not-allowed opacity-60`}
+                  />
+                </label>
+                <p className="mt-3 text-sm text-slag">
+                  This corpus has no indexed chunks yet, so StudyForge will not answer.
+                </p>
+              </>
+            )}
           </section>
         </aside>
       </div>
+      {documents ? <StudyPanel courseId={courseId} enabled={(counts?.ready ?? 0) > 0} /> : null}
     </main>
   );
 }

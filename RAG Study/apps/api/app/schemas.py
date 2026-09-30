@@ -1,5 +1,6 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -121,3 +122,120 @@ class ReprocessOut(BaseModel):
     document: DocumentOut
     job_id: uuid.UUID
     job_status: JobStatus
+
+
+class QuestionIn(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class CitationOut(BaseModel):
+    chunk_id: uuid.UUID
+    document_id: uuid.UUID
+    document_title: str
+    page_start: int | None
+    page_end: int | None
+    section: str | None
+
+
+class QuestionOut(BaseModel):
+    status: Literal["answered", "insufficient_evidence"]
+    answer: str | None
+    citations: list[CitationOut]
+
+
+class FocusIn(BaseModel):
+    focus: str = Field(min_length=1, max_length=200)
+
+
+class CardOut(BaseModel):
+    id: uuid.UUID
+    position: int
+    front: str
+    back: str
+    latest_rating: str | None
+    chunk_id: uuid.UUID | None
+    document_id: uuid.UUID | None
+    document_title: str | None
+    page_start: int | None
+
+
+class DeckOut(BaseModel):
+    id: uuid.UUID
+    title: str
+    next_card_id: uuid.UUID | None
+    cards: list[CardOut]
+
+
+class DeckCreateOut(BaseModel):
+    status: Literal["created", "insufficient_evidence"]
+    deck: DeckOut | None
+
+
+class ReviewIn(BaseModel):
+    card_id: uuid.UUID
+    rating: Literal["AGAIN", "KNOWN"]
+
+
+class QuizQuestionOut(BaseModel):
+    id: uuid.UUID
+    position: int
+    prompt: str
+    options: list[str]
+
+
+class QuizOut(BaseModel):
+    id: uuid.UUID
+    title: str
+    questions: list[QuizQuestionOut]
+
+
+class QuizCreateOut(BaseModel):
+    status: Literal["created", "insufficient_evidence"]
+    quiz: QuizOut | None
+
+
+class AnswerIn(BaseModel):
+    question_id: uuid.UUID
+    selected_option_index: int = Field(ge=0, le=20)
+
+
+class AttemptIn(BaseModel):
+    answers: list[AnswerIn]
+
+
+class AttemptResultOut(BaseModel):
+    question_id: uuid.UUID
+    prompt: str
+    selected_option_index: int | None
+    correct_option_index: int
+    correct: bool
+    explanation: str | None
+    citation: CitationOut | None
+
+
+class AttemptOut(BaseModel):
+    score: float
+    results: list[AttemptResultOut]
+
+
+class PlanIn(BaseModel):
+    exam_title: str = Field(min_length=1, max_length=200)
+    exam_date: date
+    hours_per_day: float = Field(gt=0, le=16)
+
+
+class SessionOut(BaseModel):
+    id: uuid.UUID
+    scheduled_on: date
+    duration_minutes: int
+    activity: str
+    focus: str | None
+    status: str
+
+
+class PlanOut(BaseModel):
+    id: uuid.UUID
+    exam_title: str
+    exam_date: date
+    hours_per_day: float
+    sessions: list[SessionOut]

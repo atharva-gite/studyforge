@@ -12,6 +12,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Computed,
     Date,
     DateTime,
     Enum,
@@ -24,7 +25,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 EMBEDDING_DIMENSIONS = 1536
@@ -92,6 +93,11 @@ class SessionStatus(str, enum.Enum):
     COMPLETED = "COMPLETED"
     MISSED = "MISSED"
     SKIPPED = "SKIPPED"
+
+
+class CardRating(str, enum.Enum):
+    AGAIN = "AGAIN"
+    KNOWN = "KNOWN"
 
 
 class AgentRunStatus(str, enum.Enum):
@@ -224,6 +230,7 @@ class DocumentChunk(Base):
         UniqueConstraint("version_id", "chunk_index", name="uq_chunk_index"),
         Index("ix_document_chunks_course_id", "course_id"),
         Index("ix_document_chunks_version_id", "version_id"),
+        Index("ix_document_chunks_search", "search_vector", postgresql_using="gin"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -243,6 +250,10 @@ class DocumentChunk(Base):
     heading: Mapped[str | None] = mapped_column(String(300))
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    search_vector: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('english', text)", persisted=True),
+    )
     token_count: Mapped[int | None] = mapped_column(Integer)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIMENSIONS))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
@@ -367,6 +378,7 @@ class StudySession(Base):
     scheduled_on: Mapped[date] = mapped_column(Date, nullable=False)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     activity: Mapped[str] = mapped_column(String(40), nullable=False)
+    focus: Mapped[str | None] = mapped_column(String(200))
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[SessionStatus] = mapped_column(
         _enum(SessionStatus, "session_status"), nullable=False, default=SessionStatus.PLANNED
@@ -446,6 +458,57 @@ class QuizAttempt(Base):
     score: Mapped[float | None] = mapped_column(Numeric(5, 2))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class FlashcardDeck(Base):
+    __tablename__ = "flashcard_decks"
+    __table_args__ = (Index("ix_flashcard_decks_course_user", "course_id", "user_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    cards: Mapped[list["Flashcard"]] = relationship(
+        back_populates="deck",
+        cascade="all, delete-orphan",
+        order_by="Flashcard.position",
+    )
+
+
+class Flashcard(Base):
+    __tablename__ = "flashcards"
+    __table_args__ = (Index("ix_flashcards_deck_id", "deck_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    deck_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("flashcard_decks.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    front: Mapped[str] = mapped_column(Text, nullable=False)
+    back: Mapped[str] = mapped_column(Text, nullable=False)
+    source_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("document_chunks.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    deck: Mapped[FlashcardDeck] = relationship(back_populates="cards")
+
+
+class FlashcardReview(Base):
+    __tablename__ = "flashcard_reviews"
+    __table_args__ = (Index("ix_flashcard_reviews_card_id", "card_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    card_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("flashcards.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    rating: Mapped[CardRating] = mapped_column(_enum(CardRating, "card_rating"), nullable=False)
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
 class QuizAnswer(Base):

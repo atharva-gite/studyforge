@@ -1,10 +1,10 @@
 const STAGES = [
   { name: "Upload", detail: "Files land in the course corpus.", live: true },
-  { name: "Extract", detail: "Pages become text.", live: false },
-  { name: "Chunk", detail: "Text is split on document structure.", live: false },
-  { name: "Embed", detail: "Chunks enter the vector index.", live: false },
-  { name: "Retrieve", detail: "Hybrid search returns evidence.", live: false },
-  { name: "Cite", detail: "Answers point at chunk ids.", live: false },
+  { name: "Extract", detail: "Pages become text.", live: true },
+  { name: "Chunk", detail: "Text is split on document structure.", live: true },
+  { name: "Embed", detail: "Chunks enter the vector index.", live: true },
+  { name: "Retrieve", detail: "Hybrid search returns evidence.", live: true },
+  { name: "Cite", detail: "Answers point at chunk ids.", live: true },
 ];
 
 export function Pipeline() {

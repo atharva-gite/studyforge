@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     cookie_name: str = "studyforge_session"
     cookie_secure: bool = False
     session_days: int = 7
+    openai_api_key: str = ""
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_chat_model: str = "gpt-4o-mini"
+    openai_timeout_seconds: float = 30
+    ingest_max_attempts: int = 3
+    retrieval_min_similarity: float = 0.25
 
 
 @lru_cache

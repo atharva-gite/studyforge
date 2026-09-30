@@ -1,4 +1,4 @@
-.PHONY: db api web test migrate
+.PHONY: db api web worker test migrate
 
 db:
 	docker compose up -d
@@ -8,6 +8,9 @@ migrate:
 
 api:
 	cd apps/api && .venv/bin/uvicorn app.main:app --reload --port 8000
+
+worker:
+	cd apps/api && .venv/bin/python -m app.worker
 
 web:
 	cd apps/web && npm run dev

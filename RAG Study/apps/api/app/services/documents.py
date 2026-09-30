@@ -1,6 +1,8 @@
 import hashlib
 import re
 import uuid
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
@@ -21,7 +23,27 @@ from app.models import (
 from app.schemas import DocumentOut
 from app.services.storage import LocalObjectStorage
 
-PDF_MIME = "application/pdf"
+MIME_BY_SUFFIX = {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".csv": "text/csv",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
+OFFICE_MARKER = {
+    ".xlsx": b"spreadsheetml",
+    ".docx": b"wordprocessingml",
+    ".pptx": b"presentationml",
+}
+REJECTED_MESSAGE = (
+    "Upload a PDF, text file, CSV, Excel workbook, Word document, PowerPoint deck, or image."
+)
 
 
 def read_limited(upload: UploadFile, limit: int) -> bytes:
@@ -33,12 +55,44 @@ def read_limited(upload: UploadFile, limit: int) -> bytes:
     return data
 
 
-def validate_pdf(filename: str, data: bytes) -> str:
+def _office_marker(data: bytes, marker: bytes) -> bool:
+    if not data.startswith(b"PK"):
+        return False
+    try:
+        with zipfile.ZipFile(BytesIO(data)) as archive:
+            content_types = archive.read("[Content_Types].xml")
+    except (KeyError, zipfile.BadZipFile, OSError):
+        return False
+    return marker in content_types
+
+
+def _matches_header(suffix: str, data: bytes) -> bool:
+    if suffix == ".pdf":
+        return data.startswith(b"%PDF-")
+    if suffix in OFFICE_MARKER:
+        return _office_marker(data, OFFICE_MARKER[suffix])
+    if suffix == ".png":
+        return data.startswith(b"\x89PNG\r\n\x1a\n")
+    if suffix in {".jpg", ".jpeg"}:
+        return data.startswith(b"\xff\xd8\xff")
+    if suffix == ".webp":
+        return len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP"
+    if suffix in {".txt", ".md", ".csv"}:
+        if b"\x00" in data or data.startswith((b"%PDF-", b"PK")):
+            return False
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError:
+            return False
+        return True
+    return False
+
+
+def validate_upload(filename: str, data: bytes) -> str:
     safe_name = sanitize_filename(filename)
-    if Path(safe_name).suffix.lower() != ".pdf":
-        raise HTTPException(status_code=400, detail="Only PDF files can be uploaded")
-    if not data.startswith(b"%PDF-"):
-        raise HTTPException(status_code=400, detail="The file is not a valid PDF")
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in MIME_BY_SUFFIX or not _matches_header(suffix, data):
+        raise HTTPException(status_code=400, detail=REJECTED_MESSAGE)
     return safe_name
 
 
@@ -61,8 +115,11 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def storage_key(course_id: uuid.UUID, document_id: uuid.UUID, version_id: uuid.UUID) -> str:
-    return f"course/{course_id}/documents/{document_id}/versions/{version_id}/original.pdf"
+def storage_key(course_id: uuid.UUID, document_id: uuid.UUID, version_id: uuid.UUID, filename: str) -> str:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in MIME_BY_SUFFIX:
+        suffix = ".bin"
+    return f"course/{course_id}/documents/{document_id}/versions/{version_id}/original{suffix}"
 
 
 def to_document_out(document: Document, version: DocumentVersion, *, duplicate: bool = False) -> DocumentOut:
@@ -118,6 +175,7 @@ def enqueue_processing(db: Session, version: DocumentVersion, course_id: uuid.UU
         db.add(job)
     else:
         job.status = JobStatus.PENDING
+        job.attempts = 0
         job.error = None
         job.started_at = None
         job.completed_at = None
@@ -137,7 +195,7 @@ def store_new_document(
     title: str | None,
     document_type: DocumentType,
 ) -> tuple[DocumentOut, bool]:
-    safe_name = validate_pdf(filename, data)
+    safe_name = validate_upload(filename, data)
     digest = sha256_bytes(data)
     existing = find_course_duplicate(db, course.id, digest)
     if existing is not None:
@@ -156,14 +214,14 @@ def store_new_document(
     db.flush()
 
     version_id = uuid.uuid4()
-    key = storage_key(course.id, document.id, version_id)
+    key = storage_key(course.id, document.id, version_id, safe_name)
     version = DocumentVersion(
         id=version_id,
         document_id=document.id,
         version_number=1,
         storage_key=key,
         original_filename=safe_name,
-        mime_type=PDF_MIME,
+        mime_type=MIME_BY_SUFFIX[Path(safe_name).suffix.lower()],
         size_bytes=len(data),
         sha256=digest,
         status=DocumentStatus.UPLOADED,
@@ -189,7 +247,7 @@ def store_new_version(
     filename: str,
     data: bytes,
 ) -> tuple[DocumentOut, bool]:
-    safe_name = validate_pdf(filename, data)
+    safe_name = validate_upload(filename, data)
     digest = sha256_bytes(data)
     current = active_version(document)
     if current.sha256 == digest:
@@ -197,14 +255,14 @@ def store_new_version(
 
     next_number = max(version.version_number for version in document.versions) + 1
     version_id = uuid.uuid4()
-    key = storage_key(document.course_id, document.id, version_id)
+    key = storage_key(document.course_id, document.id, version_id, safe_name)
     version = DocumentVersion(
         id=version_id,
         document_id=document.id,
         version_number=next_number,
         storage_key=key,
         original_filename=safe_name,
-        mime_type=PDF_MIME,
+        mime_type=MIME_BY_SUFFIX[Path(safe_name).suffix.lower()],
         size_bytes=len(data),
         sha256=digest,
         status=DocumentStatus.UPLOADED,
