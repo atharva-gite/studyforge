@@ -123,12 +123,16 @@ class OpenAILanguageModel:
 
 
 _model: LanguageModel | None = None
+_openai: OpenAILanguageModel | None = None
 
 
 def get_language_model() -> LanguageModel:
+    global _openai
     if _model is not None:
         return _model
-    return OpenAILanguageModel()
+    if _openai is None:
+        _openai = OpenAILanguageModel()
+    return _openai
 
 
 def set_language_model(model: LanguageModel | None) -> None:

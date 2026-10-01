@@ -12,7 +12,15 @@ _session_factory = None
 def get_engine():
     global _engine
     if _engine is None:
-        _engine = create_engine(get_settings().database_url, pool_pre_ping=True)
+        settings = get_settings()
+        _engine = create_engine(
+            settings.database_url,
+            pool_pre_ping=True,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+            pool_timeout=settings.db_pool_timeout_seconds,
+            connect_args={"options": f"-c statement_timeout={settings.db_statement_timeout_ms}"},
+        )
     return _engine
 
 

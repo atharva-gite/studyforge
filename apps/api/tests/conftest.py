@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.database import session_factory
 from app.main import app
 from app.models import Base
+from app.services.limits import clear_limits
 
 TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 ADMIN_URL = "postgresql://study:study@localhost:5432/postgres"
@@ -67,6 +68,7 @@ def language_model():
 @pytest.fixture(autouse=True)
 def clean_tables(setup_db):
     get_settings.cache_clear()
+    clear_limits()
     session = session_factory()()
     try:
         _truncate(session)

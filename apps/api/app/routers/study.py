@@ -37,6 +37,7 @@ from app.schemas import (
 )
 from app.services.access import require_course
 from app.services.language import PermanentLanguageError, TransientLanguageError, get_language_model
+from app.services.limits import require_model_budget, retry_transient
 from app.services.study import (
     create_deck,
     create_plan,
@@ -178,12 +179,14 @@ def list_decks(
 def generate_deck(
     course_id: uuid.UUID,
     body: FocusIn,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_model_budget),
     db: Session = Depends(get_db),
 ) -> DeckCreateOut:
     require_course(db, user, course_id)
     try:
-        deck = create_deck(db, course_id, user.id, body.focus, get_language_model())
+        deck = retry_transient(
+            db, lambda: create_deck(db, course_id, user.id, body.focus, get_language_model())
+        )
     except (TransientLanguageError, PermanentLanguageError) as exc:
         raise _language_error(exc) from exc
     if deck is None:
@@ -210,12 +213,14 @@ def review_card(
 def generate_quiz(
     course_id: uuid.UUID,
     body: FocusIn,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_model_budget),
     db: Session = Depends(get_db),
 ) -> QuizCreateOut:
     require_course(db, user, course_id)
     try:
-        quiz = create_quiz(db, course_id, user.id, body.focus, get_language_model())
+        quiz = retry_transient(
+            db, lambda: create_quiz(db, course_id, user.id, body.focus, get_language_model())
+        )
     except (TransientLanguageError, PermanentLanguageError) as exc:
         raise _language_error(exc) from exc
     if quiz is None:
@@ -271,7 +276,7 @@ def list_plans(
 def generate_plan(
     course_id: uuid.UUID,
     body: PlanIn,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_model_budget),
     db: Session = Depends(get_db),
 ) -> PlanOut:
     require_course(db, user, course_id)
@@ -279,15 +284,18 @@ def generate_plan(
     if body.exam_date < today:
         raise HTTPException(status_code=400, detail="The exam date has to be today or later.")
     try:
-        plan = create_plan(
+        plan = retry_transient(
             db,
-            course_id,
-            user.id,
-            body.exam_title,
-            body.exam_date,
-            body.hours_per_day,
-            get_language_model(),
-            today=today,
+            lambda: create_plan(
+                db,
+                course_id,
+                user.id,
+                body.exam_title,
+                body.exam_date,
+                body.hours_per_day,
+                get_language_model(),
+                today=today,
+            ),
         )
     except (TransientLanguageError, PermanentLanguageError) as exc:
         raise _language_error(exc) from exc

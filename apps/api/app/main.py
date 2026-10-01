@@ -84,11 +84,20 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _storage_writable() -> None:
+    root = Path(get_settings().storage_root)
+    root.mkdir(parents=True, exist_ok=True)
+    probe = root / ".ready"
+    probe.write_bytes(b"1")
+    probe.unlink(missing_ok=True)
+
+
 @app.get("/ready")
 def ready():
     try:
         with get_engine().connect() as connection:
             connection.execute(text("SELECT 1"))
+        _storage_writable()
     except Exception:
         log.exception("readiness check failed")
         return JSONResponse(status_code=503, content={"status": "unavailable"})

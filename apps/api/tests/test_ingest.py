@@ -160,3 +160,13 @@ def test_health_is_live_and_ready_checks_the_database(client, monkeypatch):
     down = client.get("/ready")
     assert down.status_code == 503
     assert down.json() == {"status": "unavailable"}
+
+
+def test_ready_fails_when_storage_cannot_be_written(client, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("STORAGE_ROOT", "/dev/null/studyforge")
+    get_settings.cache_clear()
+    response = client.get("/ready")
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable"}

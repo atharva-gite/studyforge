@@ -1,3 +1,6 @@
+from app.config import get_settings
+
+
 def register(client, email="ada@university.edu", name="Ada Lovelace", password="password123"):
     response = client.post(
         "/auth/register",
@@ -49,6 +52,19 @@ def test_login_failure_is_generic(client):
     assert wrong.status_code == 401
     assert missing.status_code == 401
     assert wrong.json()["detail"] == missing.json()["detail"]
+
+
+def test_repeated_login_is_rate_limited(client, monkeypatch):
+    monkeypatch.setenv("AUTH_ATTEMPTS_PER_MINUTE", "2")
+    get_settings.cache_clear()
+    assert register(client).status_code == 201
+    client.post("/auth/logout")
+    body = {"email": "ada@university.edu", "password": "password123"}
+    assert client.post("/auth/login", json=body).status_code == 200
+    blocked = client.post("/auth/login", json=body)
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == "Too many attempts. Try again shortly."
+    assert int(blocked.headers["retry-after"]) >= 1
 
 
 def test_weak_password_is_rejected(client):
