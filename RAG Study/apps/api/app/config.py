@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     openai_chat_model: str = "gpt-4o-mini"
     openai_timeout_seconds: float = 30
     ingest_max_attempts: int = 3
+    job_lease_seconds: int = 120
     retrieval_min_similarity: float = 0.25
 
 

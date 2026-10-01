@@ -6,8 +6,12 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.config import get_settings
+from app.database import get_engine
+from app.logging_config import configure_logging, request_id_var
 from app.routers import auth, courses, documents, questions, study
 
 log = logging.getLogger("studyforge.request")
@@ -15,6 +19,7 @@ log = logging.getLogger("studyforge.request")
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    configure_logging()
     Path(get_settings().storage_root).mkdir(parents=True, exist_ok=True)
     yield
 
@@ -42,24 +47,51 @@ app.add_middleware(
 
 @app.middleware("http")
 async def request_context(request: Request, call_next):
-    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+    token = request_id_var.set(request_id)
     started = time.perf_counter()
-    response = await call_next(request)
-    elapsed_ms = (time.perf_counter() - started) * 1000
-    response.headers["x-request-id"] = request_id
-    log.info(
-        "%s %s %s %.1fms rid=%s",
-        request.method,
-        request.url.path,
-        response.status_code,
-        elapsed_ms,
-        request_id,
-    )
-    return response
+    try:
+        try:
+            response = await call_next(request)
+        except Exception:
+            log.exception(
+                "request failed",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+                },
+            )
+            raise
+        duration_ms = round((time.perf_counter() - started) * 1000, 1)
+        response.headers["x-request-id"] = request_id
+        log.info(
+            "request completed",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "duration_ms": duration_ms,
+            },
+        )
+        return response
+    finally:
+        request_id_var.reset(token)
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready():
+    try:
+        with get_engine().connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception:
+        log.exception("readiness check failed")
+        return JSONResponse(status_code=503, content={"status": "unavailable"})
     return {"status": "ok"}
 
 

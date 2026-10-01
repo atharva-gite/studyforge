@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Document, DocumentChunk, DocumentVersion
-from app.services.language import LanguageModel, PermanentLanguageError
+from app.services.language import LanguageModel, PermanentLanguageError, TransientLanguageError
 
 RRF_K = 60
 LIST_LIMIT = 20
@@ -121,7 +121,7 @@ def retrieve_chunks(
         return []
     try:
         vector = model.embed([query])[0]
-    except PermanentLanguageError:
+    except (PermanentLanguageError, TransientLanguageError):
         raise
     except Exception as exc:
         raise PermanentLanguageError("The question could not be embedded.") from exc

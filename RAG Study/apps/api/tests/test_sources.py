@@ -73,7 +73,7 @@ def test_text_workbook_document_deck_and_image_are_indexed(client, db):
         assert uploaded.status_code == 201, uploaded.text
         body = uploaded.json()
         assert body["mime_type"] == mime
-        assert run_once(db) is True
+        assert run_once(db).worked
         listed = client.get(f"/courses/{course_id}/documents").json()
         match = next(item for item in listed if item["id"] == body["id"])
         assert match["status"] == "READY"

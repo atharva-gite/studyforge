@@ -1,6 +1,7 @@
 """Turn one stored file version into page-numbered chunks and embeddings."""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from sqlalchemy import delete
@@ -19,6 +20,10 @@ NO_TEXT_ERROR = "This file has no extractable text."
 
 class PermanentIngestError(Exception):
     """A file or model failure that a retry will not fix."""
+
+
+class LostLeaseError(Exception):
+    """Another worker owns this job. Do not write a terminal status."""
 
 
 @dataclass
@@ -112,10 +117,21 @@ def _tail(group: list[tuple[int, str]], budget: int) -> list[tuple[int, str]]:
     return kept
 
 
-def _mark(db: Session, version: DocumentVersion, status: DocumentStatus) -> None:
+def _commit(db: Session, renew: Callable[[], None] | None) -> None:
+    if renew is not None:
+        renew()
+    db.commit()
+
+
+def _mark(
+    db: Session,
+    version: DocumentVersion,
+    status: DocumentStatus,
+    renew: Callable[[], None] | None,
+) -> None:
     version.status = status
     version.error = None
-    db.commit()
+    _commit(db, renew)
 
 
 def ingest_version(
@@ -123,12 +139,13 @@ def ingest_version(
     version: DocumentVersion,
     model: LanguageModel,
     storage: LocalObjectStorage,
+    renew: Callable[[], None] | None = None,
 ) -> None:
     document = db.get(Document, version.document_id)
     if document is None:
         raise PermanentIngestError("Document is missing.")
 
-    _mark(db, version, DocumentStatus.EXTRACTING)
+    _mark(db, version, DocumentStatus.EXTRACTING, renew)
     try:
         data = storage.path_for(version.storage_key).read_bytes()
     except (OSError, ValueError) as exc:
@@ -140,23 +157,24 @@ def ingest_version(
     if not any(text.strip() for _, text in pages):
         raise PermanentIngestError(empty_text_error(version.original_filename))
 
-    _mark(db, version, DocumentStatus.CHUNKING)
+    _mark(db, version, DocumentStatus.CHUNKING, renew)
     drafts = chunk_pages(pages)
 
-    _mark(db, version, DocumentStatus.EMBEDDING)
+    _mark(db, version, DocumentStatus.EMBEDDING, renew)
     vectors: list[list[float]] = []
     texts = [draft.text for draft in drafts]
     try:
         for start in range(0, len(texts), EMBED_BATCH):
+            _commit(db, renew)
             vectors.extend(model.embed(texts[start : start + EMBED_BATCH]))
-    except TransientLanguageError:
+    except (TransientLanguageError, LostLeaseError):
         raise
     except Exception as exc:
         raise PermanentIngestError("Embeddings could not be created.") from exc
     if len(vectors) != len(drafts):
         raise PermanentIngestError("Embeddings could not be created.")
 
-    _mark(db, version, DocumentStatus.INDEXING)
+    _mark(db, version, DocumentStatus.INDEXING, renew)
     db.execute(delete(DocumentChunk).where(DocumentChunk.version_id == version.id))
     db.flush()
     for index, (draft, vector) in enumerate(zip(drafts, vectors, strict=True)):
@@ -176,4 +194,4 @@ def ingest_version(
         )
     version.status = DocumentStatus.READY
     version.error = None
-    db.commit()
+    _commit(db, renew)

@@ -13,7 +13,7 @@ def _ready_course(client, db):
     register(client)
     course_id = _create_course(client).json()["id"]
     _upload(client, course_id, content=text_pdf([LECTURE]), title="Virtual Memory")
-    assert run_once(db) is True
+    assert run_once(db).worked
     return course_id
 
 
@@ -47,6 +47,17 @@ def test_question_outside_the_corpus_returns_insufficient_evidence(client, db, l
     assert body["answer"] is None
     assert body["citations"] == []
     assert language_model.complete_calls == 0
+
+
+def test_transient_embed_failure_asks_the_caller_to_retry(client, db, language_model):
+    course_id = _ready_course(client, db)
+    language_model.fail_embeds = 1
+    response = client.post(
+        f"/courses/{course_id}/questions",
+        json={"question": "virtual memory addresses frames"},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "The language model is unavailable. Try again."
 
 
 def test_another_student_cannot_ask(client, db):

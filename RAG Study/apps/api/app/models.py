@@ -629,3 +629,7 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_token: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_token: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
